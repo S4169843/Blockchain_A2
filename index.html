@@ -1,0 +1,98 @@
+<html lang="en"><head>
+    <meta charset="utf-8">
+
+    <title>Placeholder</title>
+    
+</head>
+
+<body>
+    <h1>Placeholder</h1>
+    <!-- <h1>Conncet to Metamask</h1> -->
+
+    <!-- <button type="button" onclick="connect_to_metamask()">Connect to my Selected Metamask account</button> -->
+
+
+    <p id="connectError"></p>
+
+    <p>My eth address: <span id="current_eth_address"></span></p>
+    <p>My balance: <span id="current_eth_address_balance"></span></p>
+    <p>Curent eth network: <span id="current_network"></span></p>
+
+    <hr>
+
+    <!-- ===================== Session info (everyone sees this) ===================== -->
+    <h2>Voting Session</h2>
+    <p>My role: <span id="my_role"></span></p>
+    <p>Current topic: <span id="current_topic"></span></p>
+    <p>Current phase: <span id="current_phase"></span></p>
+    <p id="actionError" style="color:red;"></p>
+
+    <!-- ===================== Admin panel ===================== -->
+    <div id="admin_panel" style="display:none;">
+        <h2>Admin Panel</h2>
+
+        <h3>Prepare / Reset Voting Round</h3>
+        <p>
+            Topic: <input type="text" id="new_topic_input">
+        </p>
+        <p>
+            Options (comma separated): <input type="text" id="new_options_input">
+        </p>
+        <button type="button" onclick="prepareRound()">Prepare Round</button>
+        <span id="prepare_round_warning" style="color:orange;"></span>
+
+        <h3>End Voting</h3>
+        <button type="button" onclick="endVoting()">End Voting</button>
+        <span id="end_voting_warning" style="color:orange;"></span>
+
+        <h3>Reveal Results</h3>
+        <button type="button" onclick="revealResults()">Reveal Results</button>
+        <span id="reveal_results_warning" style="color:orange;"></span>
+
+        <h3>Voter Eligibility</h3>
+        <p>
+            Exclude address: <input type="text" id="exclude_address_input">
+            <button type="button" onclick="excludeVoter()">Exclude</button>
+        </p>
+        <p>
+            Reinstate address: <input type="text" id="reinstate_address_input">
+            <button type="button" onclick="reinstateVoter()">Reinstate</button>
+        </p>
+        <p>Currently excluded: <span id="excluded_list"></span></p>
+    </div>
+
+    <!-- ===================== Participant panel ===================== -->
+    <div id="participant_panel" style="display:none;">
+        <h2>Participant Panel</h2>
+        <p>My eligibility: <span id="my_eligibility"></span></p>
+        <p>My voting status: <span id="my_vote_status"></span></p>
+
+        <h3>Cast Vote</h3>
+        <div id="options_list"></div>
+        <button type="button" onclick="castVote()">Submit Vote</button>
+        <span id="cast_vote_warning" style="color:orange;"></span>
+    </div>
+
+    <!-- ===================== Results (shown once revealed) ===================== -->
+    <div id="results_section" style="display:none;">
+        <h2>Results</h2>
+        <ul id="results_list"></ul>
+        <p>Winner(s): <span id="winners_list"></span></p>
+    </div>
+
+
+<!-- Import latest Web3.js library -->
+<script src="https://cdn.jsdelivr.net/npm/web3@1.10.4/dist/web3.min.js"></script>
+<!-- <script src="js/web3.min.js"></script> -->
+
+<script src="js/voting.js"></script>
+
+<script>
+    (async () => {
+        await connect_to_metamask();
+        await init_voting_app();
+    })();
+</script>
+
+
+</body></html>
