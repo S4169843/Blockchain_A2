@@ -120,7 +120,7 @@ async function get_current_network() {
 // Contract config — REPLACE with your partner's real address/ABI
 // ============================================================
 
-const CONTRACT_ADDRESS = "0xPUT_DEPLOYED_CONTRACT_ADDRESS_HERE";
+const CONTRACT_ADDRESS = "0xd36654c114476F0246cB4DD6937511b2D3e7e076";
 
 const CONTRACT_ABI = [
   { "inputs": [], "stateMutability": "nonpayable", "type": "constructor" },
