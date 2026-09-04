@@ -2,41 +2,14 @@
   voting.js
   ---------
   Combined: MetaMask connection + contract config + voting logic.
+  Written against the actual deployed contract's ABI (not a guess).
 
-  Swap CONTRACT_ADDRESS and CONTRACT_ABI below for the real deployed
-  contract once your partner has finished it in Remix. Everything past
-  that is written against the function names/signatures documented here
-  — either update the ABI + names to match his contract, or ask him to
-  name things the same so nothing else has to change.
-
-  Proposed Solidity interface (share this with your partner):
-
-    address public admin;
-
-    function prepareRound(string calldata topic, string[] calldata options) external;   // onlyAdmin
-    function endVoting() external;                                                       // onlyAdmin
-    function revealResults() external;                                                    // onlyAdmin
-    function excludeVoter(address voter) external;                                        // onlyAdmin
-    function reinstateVoter(address voter) external;                                      // onlyAdmin
-    function castVote(uint256 optionIndex) external;                                       // participants
-
-    function getTopic() external view returns (string memory);
-    function getOptions() external view returns (string[] memory);
-    function getPhase() external view returns (uint8);
-        // 0 = NotPrepared, 1 = VotingOpen, 2 = VotingEnded, 3 = ResultsRevealed
-    function amIEligible() external view returns (bool);      // checks msg.sender
-    function haveIVoted() external view returns (bool);       // checks msg.sender
-    function getExcludedList() external view returns (address[] memory);   // onlyAdmin
-    function getVoterStatus(address voter) external view returns (bool eligible, bool voted); // onlyAdmin
-    function getResults() external view returns (string[] memory options, uint256[] memory voteCounts); // only once revealed
-    function getWinners() external view returns (string[] memory);         // only once revealed
-
-    event RoundPrepared(string topic);
-    event VoteCast(address indexed voter);
-    event VotingEnded();
-    event ResultsRevealed();
-    event VoterExcluded(address indexed voter);
-    event VoterReinstated(address indexed voter);
+  NOTE on phase() numbering: the ABI only tells us `phase` returns a
+  `DecisionVotingPlatform.Phase` enum as uint8 — it doesn't tell us the
+  order of the enum values. This assumes the natural declaration order:
+    0 = NotPrepared, 1 = VotingOpen, 2 = VotingEnded, 3 = ResultsRevealed
+  Confirm this against your partner's Solidity `enum Phase { ... }`
+  declaration and fix PHASE_* below if the order is different.
 */
 
 // ============================================================
@@ -117,210 +90,45 @@ async function get_current_network() {
 }
 
 // ============================================================
-// Contract config — REPLACE with your partner's real address/ABI
+// Contract config — real deployed contract
 // ============================================================
 
-const CONTRACT_ADDRESS = "0xd36654c114476F0246cB4DD6937511b2D3e7e076";
+// Confirm this is the FINAL deployed + verified address before submitting.
+const CONTRACT_ADDRESS = "0x3edaf3f06aa14b1c76af32cef3c9cd04ad80b030";
 
 const CONTRACT_ABI = [
-  {
-    "inputs": [],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }
-    ],
-    "name": "ResultsRevealed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" },
-      { "indexed": false, "internalType": "string", "name": "topic", "type": "string" },
-      { "indexed": false, "internalType": "uint256", "name": "optionCount", "type": "uint256" }
-    ],
-    "name": "RoundPrepared",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" },
-      { "indexed": true, "internalType": "address", "name": "voter", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "optionIndex", "type": "uint256" }
-    ],
-    "name": "VoteCast",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" },
-      { "indexed": true, "internalType": "address", "name": "voter", "type": "address" }
-    ],
-    "name": "VoterExcluded",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" },
-      { "indexed": true, "internalType": "address", "name": "voter", "type": "address" }
-    ],
-    "name": "VoterReinstated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }
-    ],
-    "name": "VotingEnded",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "admin",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "uint256", "name": "optionIndex", "type": "uint256" }],
-    "name": "castVote",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "currentRound",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "endVoting",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "voter", "type": "address" }],
-    "name": "excludeVoter",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getExcludedVoters",
-    "outputs": [{ "internalType": "address[]", "name": "", "type": "address[]" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getMyStatus",
-    "outputs": [
-      { "internalType": "bool", "name": "isAdmin", "type": "bool" },
-      { "internalType": "bool", "name": "isEligible", "type": "bool" },
-      { "internalType": "bool", "name": "hasVotedInRound", "type": "bool" },
-      { "internalType": "uint256", "name": "myVoteOption", "type": "uint256" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getOptions",
-    "outputs": [{ "internalType": "string[]", "name": "", "type": "string[]" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getOptionsCount",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "participant", "type": "address" }],
-    "name": "getParticipantStatus",
-    "outputs": [
-      { "internalType": "bool", "name": "isEligible", "type": "bool" },
-      { "internalType": "bool", "name": "hasVotedInRound", "type": "bool" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getResults",
-    "outputs": [
-      { "internalType": "uint256[]", "name": "counts", "type": "uint256[]" },
-      { "internalType": "uint256[]", "name": "winners", "type": "uint256[]" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "name": "options",
-    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "phase",
-    "outputs": [{ "internalType": "enum DecisionVotingPlatform.Phase", "name": "", "type": "uint8" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "string", "name": "_topic", "type": "string" },
-      { "internalType": "string[]", "name": "_options", "type": "string[]" }
-    ],
-    "name": "prepareRound",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "voter", "type": "address" }],
-    "name": "reinstateVoter",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "revealResults",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "topic",
-    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
-    "stateMutability": "view",
-    "type": "function"
-  }
+  { "inputs": [], "stateMutability": "nonpayable", "type": "constructor" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }], "name": "ResultsRevealed", "type": "event" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }, { "indexed": false, "internalType": "string", "name": "topic", "type": "string" }, { "indexed": false, "internalType": "uint256", "name": "optionCount", "type": "uint256" }], "name": "RoundPrepared", "type": "event" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }, { "indexed": true, "internalType": "address", "name": "voter", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "optionIndex", "type": "uint256" }], "name": "VoteCast", "type": "event" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }, { "indexed": true, "internalType": "address", "name": "voter", "type": "address" }], "name": "VoterExcluded", "type": "event" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }, { "indexed": true, "internalType": "address", "name": "voter", "type": "address" }], "name": "VoterReinstated", "type": "event" },
+  { "anonymous": false, "inputs": [{ "indexed": true, "internalType": "uint256", "name": "round", "type": "uint256" }], "name": "VotingEnded", "type": "event" },
+  { "inputs": [], "name": "admin", "outputs": [{ "internalType": "address", "name": "", "type": "address" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "internalType": "uint256", "name": "optionIndex", "type": "uint256" }], "name": "castVote", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [], "name": "currentRound", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "endVoting", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [{ "internalType": "address", "name": "voter", "type": "address" }], "name": "excludeVoter", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [], "name": "getExcludedVoters", "outputs": [{ "internalType": "address[]", "name": "", "type": "address[]" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "getMyStatus", "outputs": [{ "internalType": "bool", "name": "isAdmin", "type": "bool" }, { "internalType": "bool", "name": "isEligible", "type": "bool" }, { "internalType": "bool", "name": "hasVotedInRound", "type": "bool" }, { "internalType": "uint256", "name": "myVoteOption", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "getOptions", "outputs": [{ "internalType": "string[]", "name": "", "type": "string[]" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "getOptionsCount", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "internalType": "address", "name": "participant", "type": "address" }], "name": "getParticipantStatus", "outputs": [{ "internalType": "bool", "name": "isEligible", "type": "bool" }, { "internalType": "bool", "name": "hasVotedInRound", "type": "bool" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "getResults", "outputs": [{ "internalType": "uint256[]", "name": "counts", "type": "uint256[]" }, { "internalType": "uint256[]", "name": "winners", "type": "uint256[]" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "name": "options", "outputs": [{ "internalType": "string", "name": "", "type": "string" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "phase", "outputs": [{ "internalType": "enum DecisionVotingPlatform.Phase", "name": "", "type": "uint8" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "internalType": "string", "name": "_topic", "type": "string" }, { "internalType": "string[]", "name": "_options", "type": "string[]" }], "name": "prepareRound", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [{ "internalType": "address", "name": "voter", "type": "address" }], "name": "reinstateVoter", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [], "name": "revealResults", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [], "name": "topic", "outputs": [{ "internalType": "string", "name": "", "type": "string" }], "stateMutability": "view", "type": "function" }
 ];
 
 // ============================================================
 // Voting app logic
 // ============================================================
 
+// See the NOTE at the top of this file re: confirming this order against
+// the actual Solidity enum declaration.
 const PHASE = {
   0: "Not Prepared",
   1: "Voting Open",
@@ -337,8 +145,9 @@ let state = {
   phase: 0,
   topic: "",
   options: [],
-  amIEligible: true,
-  haveIVoted: false
+  isEligible: true,
+  hasVoted: false,
+  myVoteOption: null
 };
 
 function get_contract() {
@@ -352,14 +161,10 @@ function get_contract() {
 // Called after connect_to_metamask() has already populated the wallet info.
 async function init_voting_app() {
   try {
-    const c = get_contract();
     state.account = await get_current_eth_address();
-
-    const adminAddress = await c.methods.admin().call();
-    state.isAdmin = adminAddress.toLowerCase() === state.account.toLowerCase();
-
     await refreshState();
 
+    // Re-check everything whenever the user switches accounts/network in MetaMask.
     window.ethereum.on("accountsChanged", refreshState);
     window.ethereum.on("chainChanged", () => window.location.reload());
   } catch (error) {
@@ -373,14 +178,16 @@ async function refreshState() {
     const c = get_contract();
 
     state.account = await get_current_eth_address();
-    state.phase = parseInt(await c.methods.getPhase().call());
-    state.topic = await c.methods.getTopic().call();
+    state.phase = parseInt(await c.methods.phase().call());
+    state.topic = await c.methods.topic().call();
     state.options = await c.methods.getOptions().call();
 
-    if (!state.isAdmin) {
-      state.amIEligible = await c.methods.amIEligible().call();
-      state.haveIVoted = await c.methods.haveIVoted().call();
-    }
+    // getMyStatus() covers role + eligibility + vote status in one call.
+    const myStatus = await c.methods.getMyStatus().call();
+    state.isAdmin = myStatus.isAdmin;
+    state.isEligible = myStatus.isEligible;
+    state.hasVoted = myStatus.hasVotedInRound;
+    state.myVoteOption = parseInt(myStatus.myVoteOption);
 
     if (state.isAdmin) {
       await refreshExcludedList();
@@ -398,7 +205,7 @@ async function refreshState() {
 
 async function refreshExcludedList() {
   const c = get_contract();
-  const excluded = await c.methods.getExcludedList().call();
+  const excluded = await c.methods.getExcludedVoters().call();
   const el = document.getElementById("excluded_list");
   el.innerHTML = excluded.length ? excluded.join(", ") : "(none)";
 }
@@ -406,33 +213,39 @@ async function refreshExcludedList() {
 async function refreshResults() {
   const c = get_contract();
   const result = await c.methods.getResults().call();
-  const winners = await c.methods.getWinners().call();
 
-  const options = result.options || result[0];
-  const counts = result.voteCounts || result[1];
+  const counts = result.counts || result[0];
+  const winnerIndices = (result.winners || result[1]).map(w => parseInt(w));
 
   const list = document.getElementById("results_list");
   list.innerHTML = "";
-  for (let i = 0; i < options.length; i++) {
+  state.options.forEach((opt, i) => {
     const li = document.createElement("li");
-    li.innerHTML = options[i] + ": " + counts[i] + " vote(s)";
+    li.innerHTML = opt + ": " + counts[i] + " vote(s)";
     list.appendChild(li);
-  }
+  });
 
-  document.getElementById("winners_list").innerHTML = winners.join(", ");
+  // getResults() gives winner option INDICES, not names — map them back
+  // to the option text for display.
+  const winnerNames = winnerIndices.map(i => state.options[i]);
+  document.getElementById("winners_list").innerHTML = winnerNames.join(", ");
 }
+
+// ---------- Rendering ----------
 
 function renderUI() {
   document.getElementById("current_topic").innerHTML = state.topic || "(not set)";
   document.getElementById("current_phase").innerHTML = PHASE[state.phase] || "Unknown";
   document.getElementById("my_role").innerHTML = state.isAdmin ? "Admin" : "Participant";
 
+  // Voting options as radio buttons
   const optionsDiv = document.getElementById("options_list");
   optionsDiv.innerHTML = "";
   state.options.forEach((opt, i) => {
+    const checkedAttr = (state.hasVoted && state.myVoteOption === i) ? "checked" : "";
     optionsDiv.innerHTML += `
       <label>
-        <input type="radio" name="vote_option" value="${i}"> ${opt}
+        <input type="radio" name="vote_option" value="${i}" ${checkedAttr}> ${opt}
       </label><br>`;
   });
 
@@ -443,8 +256,10 @@ function renderUI() {
   } else {
     document.getElementById("admin_panel").style.display = "none";
     document.getElementById("participant_panel").style.display = "block";
-    document.getElementById("my_eligibility").innerHTML = state.amIEligible ? "Eligible" : "Not eligible";
-    document.getElementById("my_vote_status").innerHTML = state.haveIVoted ? "Already voted" : "Not voted yet";
+    document.getElementById("my_eligibility").innerHTML = state.isEligible ? "Eligible" : "Not eligible";
+    document.getElementById("my_vote_status").innerHTML = state.hasVoted
+      ? "Already voted for: " + (state.options[state.myVoteOption] || "?")
+      : "Not voted yet";
     renderParticipantWarnings();
   }
 
@@ -466,9 +281,9 @@ function renderParticipantWarnings() {
   let warning = "";
   if (state.phase !== 1) {
     warning = "Voting is not currently open.";
-  } else if (!state.amIEligible) {
+  } else if (!state.isEligible) {
     warning = "You have been excluded from this round.";
-  } else if (state.haveIVoted) {
+  } else if (state.hasVoted) {
     warning = "You have already voted this round.";
   }
   setWarning("cast_vote_warning", warning);
@@ -493,12 +308,12 @@ function showError(error) {
 async function prepareRound() {
   clearError();
   try {
-    const topic = document.getElementById("new_topic_input").value.trim();
+    const topicValue = document.getElementById("new_topic_input").value.trim();
     const optionsRaw = document.getElementById("new_options_input").value;
-    const options = optionsRaw.split(",").map(o => o.trim()).filter(o => o.length > 0);
+    const optionsArray = optionsRaw.split(",").map(o => o.trim()).filter(o => o.length > 0);
 
     const c = get_contract();
-    await c.methods.prepareRound(topic, options).send({ from: state.account });
+    await c.methods.prepareRound(topicValue, optionsArray).send({ from: state.account });
     await refreshState();
   } catch (error) {
     showError(error);
