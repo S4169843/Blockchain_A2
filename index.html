@@ -1,12 +1,12 @@
 <html lang="en"><head>
     <meta charset="utf-8">
 
-    <title>Placeholder</title>
+    <title>INTE 2628 Lecture 5 demo</title>
     
 </head>
 
 <body>
-    <h1>Placeholder</h1>
+    <h1>INTE 2628 Lecture 5 demo</h1>
     <!-- <h1>Conncet to Metamask</h1> -->
 
     <!-- <button type="button" onclick="connect_to_metamask()">Connect to my Selected Metamask account</button> -->
@@ -27,8 +27,8 @@
     <p>Current phase: <span id="current_phase"></span></p>
     <p id="actionError" style="color:red;"></p>
 
-    <!-- ===================== Admin panel ===================== -->
-    <div id="admin_panel" style="display:none;">
+    <!-- ===================== Admin panel — always visible to everyone ===================== -->
+    <div id="admin_panel">
         <h2>Admin Panel</h2>
 
         <h3>Prepare / Reset Voting Round</h3>
@@ -53,16 +53,20 @@
         <p>
             Exclude address: <input type="text" id="exclude_address_input">
             <button type="button" onclick="excludeVoter()">Exclude</button>
+            <span id="exclude_warning" style="color:orange;"></span>
         </p>
         <p>
             Reinstate address: <input type="text" id="reinstate_address_input">
             <button type="button" onclick="reinstateVoter()">Reinstate</button>
+            <span id="reinstate_warning" style="color:orange;"></span>
         </p>
         <p>Currently excluded: <span id="excluded_list"></span></p>
     </div>
 
-    <!-- ===================== Participant panel ===================== -->
-    <div id="participant_panel" style="display:none;">
+    <hr>
+
+    <!-- ===================== Participant panel — always visible to everyone ===================== -->
+    <div id="participant_panel">
         <h2>Participant Panel</h2>
         <p>My eligibility: <span id="my_eligibility"></span></p>
         <p>My voting status: <span id="my_vote_status"></span></p>

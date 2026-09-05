@@ -2,14 +2,25 @@
   voting.js
   ---------
   Combined: MetaMask connection + contract config + voting logic.
-  Written against the actual deployed contract's ABI (not a guess).
+
+  Design notes:
+  - BOTH the Admin panel and Participant panel are ALWAYS visible to
+    everyone, regardless of role. Per the assignment spec, restricted
+    action elements must stay visible/clickable during the demo so the
+    contract's own onlyAdmin/require() checks can be tested and shown
+    failing — the UI's job is only to show a WARNING next to a
+    restricted action, never to hide or disable it.
+  - Each contract read in refreshState() is wrapped in its own
+    try/catch. If one call reverts (e.g. getMyStatus() before any round
+    has ever been prepared), the rest of the page still renders with
+    whatever data succeeded, instead of the whole page staying blank.
 
   NOTE on phase() numbering: the ABI only tells us `phase` returns a
   `DecisionVotingPlatform.Phase` enum as uint8 — it doesn't tell us the
   order of the enum values. This assumes the natural declaration order:
     0 = NotPrepared, 1 = VotingOpen, 2 = VotingEnded, 3 = ResultsRevealed
   Confirm this against your partner's Solidity `enum Phase { ... }`
-  declaration and fix PHASE_* below if the order is different.
+  declaration and fix PHASE below if the order is different.
 */
 
 // ============================================================
@@ -127,8 +138,6 @@ const CONTRACT_ABI = [
 // Voting app logic
 // ============================================================
 
-// See the NOTE at the top of this file re: confirming this order against
-// the actual Solidity enum declaration.
 const PHASE = {
   0: "Not Prepared",
   1: "Voting Open",
@@ -141,13 +150,15 @@ let contract;
 
 let state = {
   account: null,
+  adminAddress: null,
   isAdmin: false,
   phase: 0,
   topic: "",
   options: [],
   isEligible: true,
   hasVoted: false,
-  myVoteOption: null
+  myVoteOption: null,
+  statusError: null // set if getMyStatus() itself reverted
 };
 
 function get_contract() {
@@ -160,75 +171,77 @@ function get_contract() {
 
 // Called after connect_to_metamask() has already populated the wallet info.
 async function init_voting_app() {
-  try {
-    state.account = await get_current_eth_address();
-    await refreshState();
+  state.account = await get_current_eth_address();
+  await refreshState();
 
-    // Re-check everything whenever the user switches accounts/network in MetaMask.
-    window.ethereum.on("accountsChanged", refreshState);
-    window.ethereum.on("chainChanged", () => window.location.reload());
-  } catch (error) {
-    console.log(error);
-    document.getElementById("connectError").innerHTML = error.message;
-  }
+  // Re-check everything whenever the user switches accounts/network in MetaMask.
+  window.ethereum.on("accountsChanged", refreshState);
+  window.ethereum.on("chainChanged", () => window.location.reload());
 }
 
+// Every read is wrapped individually — a revert on one call (e.g.
+// getMyStatus() before any round exists) must not stop the rest of the
+// page (and the always-visible buttons) from rendering.
 async function refreshState() {
+  const c = get_contract();
+  state.account = await get_current_eth_address();
+  state.statusError = null;
+
   try {
-    const c = get_contract();
+    state.adminAddress = await c.methods.admin().call();
+  } catch (e) { console.log("admin() failed:", e); }
 
-    state.account = await get_current_eth_address();
+  try {
     state.phase = parseInt(await c.methods.phase().call());
-    state.topic = await c.methods.topic().call();
-    state.options = await c.methods.getOptions().call();
+  } catch (e) { console.log("phase() failed:", e); }
 
-    // getMyStatus() covers role + eligibility + vote status in one call.
+  try {
+    state.topic = await c.methods.topic().call();
+  } catch (e) { console.log("topic() failed:", e); }
+
+  try {
+    state.options = await c.methods.getOptions().call();
+  } catch (e) { console.log("getOptions() failed:", e); }
+
+  try {
     const myStatus = await c.methods.getMyStatus().call();
     state.isAdmin = myStatus.isAdmin;
     state.isEligible = myStatus.isEligible;
     state.hasVoted = myStatus.hasVotedInRound;
     state.myVoteOption = parseInt(myStatus.myVoteOption);
-
-    if (state.isAdmin) {
-      await refreshExcludedList();
-    }
-
-    if (state.phase === 3) {
-      await refreshResults();
-    }
-
-    renderUI();
-  } catch (error) {
-    console.log(error);
+  } catch (e) {
+    console.log("getMyStatus() failed:", e);
+    // Fall back to comparing addresses directly so role still shows
+    // even if the rest of getMyStatus() reverts (e.g. no round yet).
+    state.isAdmin = state.adminAddress
+      ? state.adminAddress.toLowerCase() === state.account.toLowerCase()
+      : false;
+    state.isEligible = true;
+    state.hasVoted = false;
+    state.myVoteOption = null;
+    state.statusError = "Could not read full voting status (contract may revert until a round is prepared): " + (e.message || e);
   }
-}
 
-async function refreshExcludedList() {
-  const c = get_contract();
-  const excluded = await c.methods.getExcludedVoters().call();
-  const el = document.getElementById("excluded_list");
-  el.innerHTML = excluded.length ? excluded.join(", ") : "(none)";
-}
+  try {
+    state.excludedVoters = await c.methods.getExcludedVoters().call();
+  } catch (e) {
+    console.log("getExcludedVoters() failed:", e);
+    state.excludedVoters = [];
+  }
 
-async function refreshResults() {
-  const c = get_contract();
-  const result = await c.methods.getResults().call();
+  if (state.phase === 3) {
+    try {
+      const result = await c.methods.getResults().call();
+      state.resultCounts = result.counts || result[0];
+      state.resultWinnerIndices = (result.winners || result[1]).map(w => parseInt(w));
+    } catch (e) {
+      console.log("getResults() failed:", e);
+      state.resultCounts = [];
+      state.resultWinnerIndices = [];
+    }
+  }
 
-  const counts = result.counts || result[0];
-  const winnerIndices = (result.winners || result[1]).map(w => parseInt(w));
-
-  const list = document.getElementById("results_list");
-  list.innerHTML = "";
-  state.options.forEach((opt, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = opt + ": " + counts[i] + " vote(s)";
-    list.appendChild(li);
-  });
-
-  // getResults() gives winner option INDICES, not names — map them back
-  // to the option text for display.
-  const winnerNames = winnerIndices.map(i => state.options[i]);
-  document.getElementById("winners_list").innerHTML = winnerNames.join(", ");
+  renderUI();
 }
 
 // ---------- Rendering ----------
@@ -237,6 +250,8 @@ function renderUI() {
   document.getElementById("current_topic").innerHTML = state.topic || "(not set)";
   document.getElementById("current_phase").innerHTML = PHASE[state.phase] || "Unknown";
   document.getElementById("my_role").innerHTML = state.isAdmin ? "Admin" : "Participant";
+
+  document.getElementById("actionError").innerHTML = state.statusError || "";
 
   // Voting options as radio buttons
   const optionsDiv = document.getElementById("options_list");
@@ -249,44 +264,64 @@ function renderUI() {
       </label><br>`;
   });
 
-  if (state.isAdmin) {
-    document.getElementById("admin_panel").style.display = "block";
-    document.getElementById("participant_panel").style.display = "none";
-    renderAdminWarnings();
-  } else {
-    document.getElementById("admin_panel").style.display = "none";
-    document.getElementById("participant_panel").style.display = "block";
-    document.getElementById("my_eligibility").innerHTML = state.isEligible ? "Eligible" : "Not eligible";
-    document.getElementById("my_vote_status").innerHTML = state.hasVoted
-      ? "Already voted for: " + (state.options[state.myVoteOption] || "?")
-      : "Not voted yet";
-    renderParticipantWarnings();
-  }
+  // Both panels are ALWAYS visible/clickable to everyone — role only
+  // changes which warnings show, never what's on screen.
+  document.getElementById("my_eligibility").innerHTML = state.isEligible ? "Eligible" : "Not eligible";
+  document.getElementById("my_vote_status").innerHTML = state.hasVoted
+    ? "Already voted for: " + (state.options[state.myVoteOption] || "?")
+    : "Not voted yet";
+
+  const excluded = state.excludedVoters || [];
+  document.getElementById("excluded_list").innerHTML = excluded.length ? excluded.join(", ") : "(none)";
 
   document.getElementById("results_section").style.display = (state.phase === 3) ? "block" : "none";
-}
-
-function renderAdminWarnings() {
-  setWarning("prepare_round_warning",
-    state.phase === 1 ? "A voting round is already open — end it before preparing a new one." : "");
-
-  setWarning("end_voting_warning",
-    state.phase !== 1 ? "Voting is not currently open." : "");
-
-  setWarning("reveal_results_warning",
-    state.phase !== 2 ? "Voting must be ended before results can be revealed." : "");
-}
-
-function renderParticipantWarnings() {
-  let warning = "";
-  if (state.phase !== 1) {
-    warning = "Voting is not currently open.";
-  } else if (!state.isEligible) {
-    warning = "You have been excluded from this round.";
-  } else if (state.hasVoted) {
-    warning = "You have already voted this round.";
+  if (state.phase === 3) {
+    const list = document.getElementById("results_list");
+    list.innerHTML = "";
+    state.options.forEach((opt, i) => {
+      const li = document.createElement("li");
+      const count = (state.resultCounts && state.resultCounts[i]) || 0;
+      li.innerHTML = opt + ": " + count + " vote(s)";
+      list.appendChild(li);
+    });
+    const winnerNames = (state.resultWinnerIndices || []).map(i => state.options[i]);
+    document.getElementById("winners_list").innerHTML = winnerNames.join(", ");
   }
-  setWarning("cast_vote_warning", warning);
+
+  renderWarnings();
+}
+
+function renderWarnings() {
+  // Admin-only actions: warn any non-admin that these are restricted,
+  // regardless of phase. Admin still gets the phase-based warnings.
+  setWarning("prepare_round_warning", adminWarning() ||
+    (state.phase === 1 ? "A voting round is already open — end it before preparing a new one." : ""));
+
+  setWarning("end_voting_warning", adminWarning() ||
+    (state.phase !== 1 ? "Voting is not currently open." : ""));
+
+  setWarning("reveal_results_warning", adminWarning() ||
+    (state.phase !== 2 ? "Voting must be ended before results can be revealed." : ""));
+
+  setWarning("exclude_warning", adminWarning());
+  setWarning("reinstate_warning", adminWarning());
+
+  // Participant action: Admin is not permitted to vote at all.
+  let voteWarning = "";
+  if (state.isAdmin) {
+    voteWarning = "Admin accounts are not permitted to vote.";
+  } else if (state.phase !== 1) {
+    voteWarning = "Voting is not currently open.";
+  } else if (!state.isEligible) {
+    voteWarning = "You have been excluded from this round.";
+  } else if (state.hasVoted) {
+    voteWarning = "You have already voted this round.";
+  }
+  setWarning("cast_vote_warning", voteWarning);
+}
+
+function adminWarning() {
+  return state.isAdmin ? "" : "Admin only — the contract will reject this from a non-admin account.";
 }
 
 function setWarning(elementId, message) {
@@ -304,6 +339,9 @@ function showError(error) {
 }
 
 // ---------- Admin actions ----------
+// These stay callable by anyone in the UI — the contract's onlyAdmin
+// modifier is what actually enforces the restriction and returns the
+// error shown in showError() when a non-admin tries.
 
 async function prepareRound() {
   clearError();
