@@ -105,7 +105,7 @@ async function get_current_network() {
 // ============================================================
 
 // Confirm this is the FINAL deployed + verified address before submitting.
-const CONTRACT_ADDRESS = "0x3edaf3f06aa14b1c76af32cef3c9cd04ad80b030";
+const CONTRACT_ADDRESS = "0xd36654c114476F0246cB4DD6937511b2D3e7e076";
 
 const CONTRACT_ABI = [
   { "inputs": [], "stateMutability": "nonpayable", "type": "constructor" },
