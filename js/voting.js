@@ -204,7 +204,7 @@ async function refreshState() {
   } catch (e) { console.log("getOptions() failed:", e); }
 
   try {
-    const myStatus = await c.methods.getMyStatus().call();
+    const myStatus = await c.methods.getMyStatus().call({ from: state.account });
     state.isAdmin = myStatus.isAdmin;
     state.isEligible = myStatus.isEligible;
     state.hasVoted = myStatus.hasVotedInRound;
