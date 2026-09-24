@@ -86,8 +86,12 @@ async function get_current_network() {
   }
 }
 
-// Deployed contract address and ABI
-const CONTRACT_ADDRESS = "0xd36654c114476F0246cB4DD6937511b2D3e7e076";
+// ============================================================
+// Contract config — real deployed contract
+// ============================================================
+
+// Confirm this is the FINAL deployed + verified address before submitting.
+const CONTRACT_ADDRESS = "0xB0CFc681D3Ed87d0d75C2026eAE8E6C507a15FFb";
 
 const CONTRACT_ABI = [
   { "inputs": [], "stateMutability": "nonpayable", "type": "constructor" },
