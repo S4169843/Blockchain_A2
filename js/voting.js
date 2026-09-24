@@ -86,11 +86,7 @@ async function get_current_network() {
   }
 }
 
-// ============================================================
-// Contract config — real deployed contract
-// ============================================================
-
-// Confirm this is the FINAL deployed + verified address before submitting.
+// Deployed contract address and ABI
 const CONTRACT_ADDRESS = "0xB0CFc681D3Ed87d0d75C2026eAE8E6C507a15FFb";
 
 const CONTRACT_ABI = [
@@ -190,8 +186,6 @@ async function refreshState() {
 
   try {
     // gets role, voting eligibility and status of current account then sets the state variables to the corresponding status viables
-    // myStatus must be declared before it's used below — using it above its own
-    // declaration would throw an error, since it hasn't been assigned yet.
     const myStatus = await c.methods.getMyStatus().call({ from: state.account });
     state.isAdmin = myStatus.isAdmin;
     state.isEligible = myStatus.isEligible;
@@ -246,7 +240,6 @@ function renderUI() {
   document.getElementById("current_topic").innerHTML = state.topic || "(not set)";
   document.getElementById("current_phase").innerHTML = PHASE[state.phase] || "Unknown";
 
-  // Was: state.isAdmin ? "Admin" : "Participant"
   if (state.isAdmin) {
     document.getElementById("my_role").innerHTML = "Admin";
   } else {
@@ -255,11 +248,10 @@ function renderUI() {
 
   document.getElementById("actionError").innerHTML = state.statusError || "";
 
-  // Voting options as radio buttons
+  // Voting options buttons
   const optionsDiv = document.getElementById("options_list");
   optionsDiv.innerHTML = "";
   state.options.forEach((opt, i) => {
-    // Was: (state.hasVoted && state.myVoteOption === i) ? "checked" : ""
     let checkedAttr = "";
     if (state.hasVoted && state.myVoteOption === i) {
       checkedAttr = "checked";
@@ -270,14 +262,12 @@ function renderUI() {
       </label><br>`;
   });
 
-  // Was: state.isEligible ? "Eligible" : "Not eligible"
   if (state.isEligible) {
     document.getElementById("my_eligibility").innerHTML = "Eligible";
   } else {
     document.getElementById("my_eligibility").innerHTML = "Not eligible";
   }
 
-  // Was: state.hasVoted ? "Already voted for: " + (...) : "Not voted yet"
   if (state.hasVoted) {
     let votedOptionName = state.options[state.myVoteOption];
     if (!votedOptionName) {
@@ -289,7 +279,6 @@ function renderUI() {
   }
 
   const excluded = state.excludedVoters || [];
-  // Was: excluded.length ? excluded.join(", ") : "(none)"
   if (excluded.length) {
     document.getElementById("excluded_list").innerHTML = excluded.join(", ");
   } else {
@@ -301,11 +290,11 @@ function renderUI() {
   renderWarnings(); // renders warning based on role
 }
 
+// Displays the results after admin releases them
 function renderResultsInto(sectionId, listId, winnersId) {
   const section = document.getElementById(sectionId);
   if (!section) return;
 
-  // Was: (state.phase === 3) ? "block" : "none"
   if (state.phase === 3) {
     section.style.display = "block";
   } else {
@@ -327,24 +316,20 @@ function renderResultsInto(sectionId, listId, winnersId) {
 }
 
 function renderWarnings() {
-  // Admin-only actions: warn any non-admin that these are restricted,
-  // regardless of phase. Admin still gets the phase-based warnings.
-
-  // Was: state.phase === 1 ? "..." : ""
+  // Admin actions: warn any non-admin that these are restricted
+  // phase warnings for each phase
   let prepareRoundPhaseWarning = "";
   if (state.phase === 1) {
     prepareRoundPhaseWarning = "A voting round is already open — end it before preparing a new one.";
   }
   setWarning("prepare_round_warning", adminWarning() || prepareRoundPhaseWarning);
 
-  // Was: state.phase !== 1 ? "..." : ""
   let endVotingPhaseWarning = "";
   if (state.phase !== 1) {
     endVotingPhaseWarning = "Voting is not currently open.";
   }
   setWarning("end_voting_warning", adminWarning() || endVotingPhaseWarning);
 
-  // Was: state.phase !== 2 ? "..." : ""
   let revealResultsPhaseWarning = "";
   if (state.phase !== 2) {
     revealResultsPhaseWarning = "Voting must be ended before results can be revealed.";
@@ -369,8 +354,8 @@ function renderWarnings() {
   setWarning("cast_vote_warning", voteWarning);
 }
 
+// if not admin will show error else when log in as admin no error shown
 function adminWarning() {
-  // Was: state.isAdmin ? "" : "Admin only — ..."
   if (state.isAdmin) {
     return "";
   } else {
@@ -386,6 +371,7 @@ function setWarning(elementId, message) {
 function clearError() {
   document.getElementById("actionError").innerHTML = "";
 }
+
 
 function showError(error) {
   console.log(error);
@@ -409,6 +395,7 @@ async function prepareRound() {
   }
 }
 
+// ends voting stage
 async function endVoting() {
   clearError();
   try {
